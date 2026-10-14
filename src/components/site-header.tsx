@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Dices, History, Info, LayoutDashboard, RefreshCcw } from "lucide-react";
+import { BarChart3, Dices, History, Info, LayoutDashboard, Percent, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "แดชบอร์ด", icon: LayoutDashboard },
   { href: "/history", label: "ประวัติผล", icon: History },
   { href: "/statistics", label: "สถิติ", icon: BarChart3 },
+  { href: "/check", label: "ตรวจเลข", icon: Percent },
   { href: "/random", label: "สุ่มเลข", icon: Dices },
   { href: "/sync", label: "ประวัติซิงก์", icon: RefreshCcw },
   { href: "/about", label: "วิธีการ", icon: Info },
