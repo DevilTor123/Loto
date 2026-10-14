@@ -1,0 +1,34 @@
+# Self-host: PostgreSQL + เว็บ + scheduler (worker ที่ซิงก์ตามเวลา)
+#   cp .env.example .env  (แก้ CRON_SECRET / รหัสผ่าน)
+#   docker compose up -d --build
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lotto
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: lotto
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lotto"]
+      interval: 5s
+      retries: 10
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://lotto:${POSTGRES_PASSWORD:-change-me}@db:5432/lotto?schema=public
+    ports: ["3000:3000"]
+    depends_on: { db: { condition: service_healthy } }
+  scheduler:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://lotto:${POSTGRES_PASSWORD:-change-me}@db:5432/lotto?schema=public
+    command: ["sh", "-c", "npx prisma migrate deploy && npx tsx scripts/scheduler.ts"]
+    depends_on: { db: { condition: service_healthy } }
+volumes:
+  pgdata:

@@ -1,0 +1,142 @@
+// LOTTO INTELLIGENCE — PostgreSQL schema
+// หมายเลขทุกช่องเก็บเป็น String (VarChar) เพื่อรักษาเลขศูนย์ด้านหน้า
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// สถานะความน่าเชื่อถือของผลงวด
+enum DrawStatus {
+  VERIFIED     // ตรงกันทั้งแหล่งหลักและ GLO
+  SOURCE_ONLY  // มาจากแหล่งเดียว (GLO ไม่ตอบ ณ เวลาที่ตรวจ) — ใช้คำนวณได้ แต่แสดงป้ายกำกับ
+  CONFLICT     // แหล่งข้อมูลขัดแย้งกัน — รอตรวจสอบ, ไม่นำไปคำนวณสถิติ
+}
+
+/// ประเภทรางวัล (แยกจากรางวัลที่ 1 อย่างชัดเจน)
+enum PrizeType {
+  LAST2        // เลขท้าย 2 ตัว
+  FRONT3       // เลขหน้า 3 ตัว
+  LAST3        // เลขท้าย 3 ตัว
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS      // ได้ข้อมูลใหม่หรือแก้ไขข้อมูล
+  NO_CHANGE    // ติดต่อแหล่งข้อมูลได้ แต่ยังไม่มีงวดใหม่
+  PARTIAL      // แหล่งหลักล้มเหลว ใช้แหล่งสำรอง / หรือมีบางรายการผิดพลาด
+  FAILED       // ทุกแหล่งล้มเหลว
+  SKIPPED      // มีการซิงก์อื่นกำลังทำงาน หรืออยู่ในช่วง cooldown
+}
+
+enum ChangeAction {
+  ADDED
+  UPDATED
+  VERIFIED
+  CONFLICT
+}
+
+model LotteryDraw {
+  id                Int           @id @default(autoincrement())
+  /// วันที่งวด (ค.ศ.) — Unique: ป้องกันการเพิ่มงวดซ้ำ
+  drawDate          DateTime      @unique @map("draw_date") @db.Date
+  /// รางวัลที่ 1 — สตริง 6 หลักเสมอ
+  firstPrizeNumber  String        @map("first_prize_number") @db.VarChar(6)
+  status            DrawStatus    @default(SOURCE_ONLY)
+  /// ชื่อแหล่งที่ได้ข้อมูลมาครั้งแรก เช่น lottery.co.th, glo.or.th
+  sourceName        String        @map("source_name") @db.VarChar(64)
+  sourceUrl         String        @map("source_url")
+  /// แหล่งที่ใช้ยืนยัน (เช่น glo.or.th) — null ถ้ายังไม่ได้ยืนยัน
+  verifiedSource    String?       @map("verified_source") @db.VarChar(64)
+  verifiedAt        DateTime?     @map("verified_at")
+  /// ค่าที่แหล่งอื่นรายงาน กรณีขัดแย้ง (แสดงในสถานะรอตรวจสอบ)
+  conflictNumber    String?       @map("conflict_number") @db.VarChar(6)
+  conflictSource    String?       @map("conflict_source") @db.VarChar(64)
+  fetchedAt         DateTime      @map("fetched_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  prizes            PrizeResult[]
+
+  @@index([firstPrizeNumber])
+  @@index([status, drawDate])
+  @@map("lottery_draws")
+}
+
+/// รางวัลประเภทอื่น เก็บแยกพร้อมระบุประเภท — ไม่ปนกับสถิติรางวัลที่ 1
+model PrizeResult {
+  id        Int         @id @default(autoincrement())
+  drawId    Int         @map("draw_id")
+  prizeType PrizeType   @map("prize_type")
+  number    String      @db.VarChar(6)
+  /// ลำดับภายในประเภท (เช่น เลขท้าย 3 ตัวมี 2 ชุด)
+  position  Int         @default(0)
+  draw      LotteryDraw @relation(fields: [drawId], references: [id], onDelete: Cascade)
+
+  @@unique([drawId, prizeType, position])
+  @@index([prizeType, number])
+  @@map("prize_results")
+}
+
+model SyncLog {
+  id               Int          @id @default(autoincrement())
+  sourceName       String       @map("source_name") @db.VarChar(64)
+  /// cron | manual | cli | backfill
+  trigger          String       @db.VarChar(16)
+  startedAt        DateTime     @default(now()) @map("started_at")
+  finishedAt       DateTime?    @map("finished_at")
+  status           SyncStatus   @default(RUNNING)
+  recordsAdded     Int          @default(0) @map("records_added")
+  recordsUpdated   Int          @default(0) @map("records_updated")
+  recordsConflict  Int          @default(0) @map("records_conflict")
+  errorMessage     String?      @map("error_message")
+  /// บันทึกรายละเอียดต่อแหล่ง (ความพยายาม, เวลา, ข้อผิดพลาด)
+  details          Json?
+
+  changes          DrawChange[]
+
+  @@index([startedAt])
+  @@index([status, finishedAt])
+  @@map("sync_logs")
+}
+
+/// Audit trail: การซิงก์แต่ละครั้งเพิ่ม/แก้ไขงวดใดบ้าง
+model DrawChange {
+  id          Int          @id @default(autoincrement())
+  syncLogId   Int          @map("sync_log_id")
+  drawDate    DateTime     @map("draw_date") @db.Date
+  action      ChangeAction
+  oldNumber   String?      @map("old_number") @db.VarChar(6)
+  newNumber   String?      @map("new_number") @db.VarChar(6)
+  sourceName  String       @map("source_name") @db.VarChar(64)
+  sourceUrl   String?      @map("source_url")
+  note        String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  syncLog     SyncLog      @relation(fields: [syncLogId], references: [id], onDelete: Cascade)
+
+  @@index([syncLogId])
+  @@index([drawDate])
+  @@map("draw_changes")
+}
+
+model SavedNumber {
+  id        Int      @id @default(autoincrement())
+  number    String   @unique @db.VarChar(6)
+  label     String?  @db.VarChar(80)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("saved_numbers")
+}
+
+/// เวอร์ชันข้อมูล: เพิ่มขึ้นทุกครั้งที่ข้อมูลงวดเปลี่ยน ใช้เป็นกุญแจแคชสถิติ
+model AppMeta {
+  key       String   @id @db.VarChar(64)
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_meta")
+}

@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0b0f14;
+  --surface: #131a23;
+  --surface-2: #18212c;
+  --border: #243040;
+  --primary: #d6b36a;
+  --primary-strong: #e7c98a;
+  --text: #f5f5f5;
+  --muted: #9ca3af;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  /* ชุดสีกราฟหลายชุดข้อมูล (ตรวจด้วย validator: CVD/normal-vision ผ่านบนพื้น #131A23) */
+  --series-1: #a88228;
+  --series-2: #1f96b8;
+  --series-3: #d2557f;
+  --series-4: #7470e0;
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-sarabun), "Noto Sans Thai", system-ui, sans-serif;
+  --font-display: var(--font-chakra), var(--font-sarabun), system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  background-image:
+    radial-gradient(1200px 500px at 85% -10%, rgba(214, 179, 106, 0.08), transparent 60%),
+    radial-gradient(900px 400px at -10% 10%, rgba(31, 150, 184, 0.05), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
 }
+
+.num {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.page-enter { animation: rise-in 0.35s ease-out both; }
+
+@keyframes digit-roll {
+  0% { opacity: 0; transform: translateY(-40%) scale(0.9); filter: blur(2px); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+.digit-roll { animation: digit-roll 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .digit-roll { animation: none; }
+}
+
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }

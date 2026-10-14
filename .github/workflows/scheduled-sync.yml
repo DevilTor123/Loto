@@ -1,0 +1,38 @@
+# เรียก /api/cron/sync ตามเวลา — ใช้ได้กับทุกแพลตฟอร์ม deploy
+# ตั้ง Repository secrets: SITE_URL (เช่น https://your-domain.example) และ CRON_SECRET
+# หมายเหตุ: GitHub Actions schedule อาจล่าช้าได้หลายนาทีในช่วงที่ระบบมีโหลดสูง
+name: Scheduled lottery sync
+
+on:
+  schedule:
+    # ทุก 30 นาที
+    - cron: "*/30 * * * *"
+    # วันออกรางวัล (1, 2, 16, 17) ช่วง 14:30–18:30 น. เวลาไทย (07:30–11:30 UTC) ทุก 10 นาที
+    - cron: "5-55/10 7-11 1,2,16,17 * *"
+    # 30 ธ.ค. (งวดที่มักเลื่อนจาก 1 ม.ค.)
+    - cron: "5-55/10 7-11 30 12 *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "ดึงย้อนหลังทุกหน้า"
+        type: boolean
+        default: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call sync endpoint
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BACKFILL: ${{ inputs.backfill && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o response.json -w "%{http_code}" --max-time 300 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${SITE_URL}/api/cron/sync?backfill=${BACKFILL}")
+          cat response.json; echo
+          # 502 = ทุกแหล่งล้มเหลว (ระบบบันทึก log แล้ว) — ให้ job แดงเพื่อแจ้งเตือน
+          test "$code" = "200"
