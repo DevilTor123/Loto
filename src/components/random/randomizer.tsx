@@ -21,6 +21,7 @@ import { Badge } from "../ui/badge";
 import { Input, Label, Select } from "../ui/input";
 import { Slider } from "../ui/slider";
 import { NumberDisplay } from "../number-display";
+import { LotteryPlusButton } from "../external-search";
 import { EmptyState, ErrorState, Spinner } from "../states";
 import { Table, TBody, TD, TH, THead, TR } from "../ui/table";
 
@@ -326,6 +327,7 @@ export function Randomizer() {
                           <Button variant="ghost" size="icon" aria-label={`คัดลอก ${r.number}`} onClick={() => copy(r.number, `${rollId}-${i}`)}>
                             {copied === `${rollId}-${i}` ? <Check className="text-success" /> : <Copy />}
                           </Button>
+                          <LotteryPlusButton number={r.number} compact />
                           <Button variant="ghost" size="icon" aria-label={`บันทึก ${r.number} เป็นรายการโปรด`} onClick={() => saveNumber(r.number)}>
                             <Star className={savedSet.has(r.number) ? "fill-primary text-primary" : ""} />
                           </Button>
@@ -411,6 +413,7 @@ export function Randomizer() {
                         <Button variant="ghost" size="icon" aria-label={`คัดลอก ${s.number}`} onClick={() => copy(s.number, `fav-${s.id}`)}>
                           {copied === `fav-${s.id}` ? <Check className="text-success" /> : <Copy />}
                         </Button>
+                        <LotteryPlusButton number={s.number} compact />
                         <Button variant="ghost" size="icon" aria-label={`ลบ ${s.number}`} onClick={() => saved.remove(s.number)}>
                           <Trash2 />
                         </Button>

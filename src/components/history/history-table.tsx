@@ -10,6 +10,7 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Caption, Table, TBody, TD, TH, THead, TR } from "../ui/table";
 import { EmptyState, ErrorState, LoadingRows } from "../states";
+import { LotteryPlusButton } from "../external-search";
 
 interface Item {
   id: number;
@@ -145,6 +146,7 @@ export function HistoryTable() {
           </Button>
         </form>
 
+        {exact && <LotteryPlusButton number={normQ} />}
         {data && normQ && (
           <p className="text-sm" aria-live="polite">
             {exact ? (
