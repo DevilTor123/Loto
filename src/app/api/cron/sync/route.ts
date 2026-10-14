@@ -4,7 +4,7 @@ import { errorResponse, json } from "@/lib/api";
 import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60; // ใช้ได้กับ Vercel แผนฟรี (Hobby)
 
 function authorized(req: Request): boolean {
   if (!config.cronSecret) return false;
