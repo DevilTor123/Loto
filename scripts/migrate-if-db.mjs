@@ -7,5 +7,15 @@ const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 if (!url) {
   console.warn("[migrate] DATABASE_URL ยังไม่ได้ตั้งค่า — ข้าม prisma migrate deploy");
 } else {
-  execSync("npx prisma migrate deploy", { stdio: "inherit", env: { ...process.env, DATABASE_URL: url } });
+  // Neon อาจกำลังปลุกฐานข้อมูล (cold start) หรือติด advisory lock ชั่วคราว — ลองซ้ำก่อนยอมให้ build ล้ม
+  for (let attempt = 1; ; attempt++) {
+    try {
+      execSync("npx prisma migrate deploy", { stdio: "inherit", env: { ...process.env, DATABASE_URL: url } });
+      break;
+    } catch (e) {
+      if (attempt >= 4) throw e;
+      console.warn(`[migrate] ล้มเหลว (ครั้งที่ ${attempt}) — ลองใหม่ใน ${attempt * 5} วินาที`);
+      await new Promise((r) => setTimeout(r, attempt * 5000));
+    }
+  }
 }
