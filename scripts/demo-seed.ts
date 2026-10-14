@@ -9,7 +9,7 @@
  * หมายเลขสร้างด้วย crypto.getRandomValues แบบเท่ากันทุกหมายเลข
  */
 import { PrismaClient } from "@prisma/client";
-import { uniformNumber } from "../src/lib/random";
+import { randomInt, uniformNumber } from "../src/lib/random";
 import { isoToDate } from "../src/lib/thai-date";
 
 async function main() {
@@ -62,6 +62,14 @@ async function main() {
         sourceName: "demo-generator",
         sourceUrl: "http://localhost:3000/about#demo",
         fetchedAt: now,
+        // เลขหน้า/ท้าย 3 ตัว (2 ชุด) และเลขท้าย 2 ตัว — สุ่มเช่นกัน
+        prizes: {
+          create: [
+            ...[0, 1].map((position) => ({ prizeType: "FRONT3" as const, position, number: String(randomInt(1000)).padStart(3, "0") })),
+            ...[0, 1].map((position) => ({ prizeType: "LAST3" as const, position, number: String(randomInt(1000)).padStart(3, "0") })),
+            { prizeType: "LAST2" as const, position: 0, number: String(randomInt(100)).padStart(2, "0") },
+          ],
+        },
       },
     });
   }

@@ -13,6 +13,7 @@ import { Caption, Table, TBody, TD, TH, THead, TR } from "../ui/table";
 import { NumberDisplay } from "../number-display";
 import { ErrorState, Spinner } from "../states";
 import { LotteryPlusButton } from "../external-search";
+import { StatPicks } from "./stat-picks";
 
 interface PrizeHist {
   value: string;
@@ -112,6 +113,7 @@ export function NumberChecker() {
 
       {data && !loading && (
         <>
+          <TimesBar data={data} />
           <Card className="overflow-hidden">
             <div className="grid gap-0 md:grid-cols-[1fr_1.2fr]">
               <div className="flex flex-col items-center justify-center gap-3 border-b border-border p-6 md:border-b-0 md:border-r">
@@ -225,7 +227,53 @@ export function NumberChecker() {
           </Card>
         </>
       )}
+
+      <StatPicks
+        onPick={(n) => {
+          setInput(n);
+          void check(n);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
     </div>
+  );
+}
+
+/** แถบสรุป: เลขนี้ออกมาแล้วกี่ครั้งในแต่ละประเภทรางวัล */
+function TimesBar({ data }: { data: CheckResp }) {
+  const items = [
+    { label: "รางวัลที่ 1", value: data.number, count: data.firstPrize.count, of: data.totalDraws, last: data.firstPrize.dates[0] },
+    { label: "เลขหน้า 3 ตัว", value: data.front3.value, count: data.front3.count, of: data.front3.drawsWithData, last: data.front3.dates[0] },
+    { label: "เลขท้าย 3 ตัว", value: data.last3.value, count: data.last3.count, of: data.last3.drawsWithData, last: data.last3.dates[0] },
+    { label: "เลขท้าย 2 ตัว", value: data.last2.value, count: data.last2.count, of: data.last2.drawsWithData, last: data.last2.dates[0] },
+  ];
+  return (
+    <section aria-label="จำนวนครั้งที่เคยออก" className="rounded-2xl border border-primary/30 bg-surface p-4">
+      <p className="mb-3 flex items-center gap-1.5 text-sm text-muted">
+        <History className="size-4 text-primary" aria-hidden /> เลข <span className="num text-primary">{data.number}</span> ออกมาแล้วกี่ครั้ง
+      </p>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {items.map((it) => (
+          <div key={it.label} className="min-w-0 rounded-xl border border-border bg-bg/40 p-3">
+            <p className="text-xs text-muted">
+              {it.label} <span className="num text-primary">{it.value}</span>
+            </p>
+            {it.of === 0 ? (
+              <p className="mt-1 text-sm text-muted">ยังไม่มีข้อมูล</p>
+            ) : (
+              <>
+                <p className={`num mt-1 text-3xl font-semibold ${it.count > 0 ? "text-success" : "text-text"}`}>
+                  {it.count.toLocaleString("th-TH")} <span className="text-sm font-normal text-muted">ครั้ง</span>
+                </p>
+                <p className="truncate text-[11px] text-muted">
+                  จาก {it.of.toLocaleString("th-TH")} งวด{it.last ? ` · ล่าสุด ${formatThaiDate(it.last, true)}` : ""}
+                </p>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
