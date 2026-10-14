@@ -120,6 +120,18 @@ npm run typecheck && npm run lint
 
 ## Deploy
 
+### แบบฟรีทั้งหมด (แนะนำ): Vercel Hobby + Neon Free + GitHub Actions
+
+1. Push โค้ดขึ้น GitHub repo ของคุณ
+2. vercel.com → Add New Project → Import repo นั้น
+3. ในหน้าโปรเจกต์ Vercel → Storage → เลือก **Neon** (Postgres แผนฟรี) → Connect — Vercel จะตั้ง `DATABASE_URL` ให้เอง
+4. Settings → Environment Variables: เพิ่ม `CRON_SECRET` (สุ่มยาว ๆ) และ `NEXT_PUBLIC_SITE_URL` (URL ที่ Vercel ให้) → Redeploy
+   (สคริปต์ `vercel-build` รัน `prisma migrate deploy` ให้อัตโนมัติ)
+5. GitHub repo → Settings → Secrets and variables → Actions: เพิ่ม `SITE_URL` และ `CRON_SECRET` (ค่าเดียวกับข้อ 4)
+6. GitHub → Actions → “Scheduled lottery sync” → Run workflow → ติ๊ก backfill เพื่อดึงข้อมูลย้อนหลังครั้งแรก
+7. เปิดหน้า `/sync` บนเว็บ ตรวจว่าซิงก์สำเร็จ หลังจากนั้น workflow จะเรียกทุก 30 นาทีเอง (และ Vercel Cron อีกวันละครั้ง)
+
+
 ### ตัวเลือก 1: Vercel + PostgreSQL ที่โฮสต์ (Neon / Supabase / Vercel Postgres)
 
 1. Push โปรเจกต์ขึ้น GitHub แล้ว Import ใน Vercel
