@@ -6,7 +6,13 @@ import { normalizeDigits, POSITION_NAMES } from "@/lib/number";
 import { anyPrizeProbability, formatProbability, prizeOdds } from "@/lib/odds";
 import { formatThaiDate } from "@/lib/thai-date";
 import { fmtPct } from "@/lib/utils";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../ui/card";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Caption, Table, TBody, TD, TH, THead, TR } from "../ui/table";
@@ -14,6 +20,28 @@ import { NumberDisplay } from "../number-display";
 import { ErrorState, Spinner } from "../states";
 import { LotteryPlusButton } from "../external-search";
 import { StatPicks } from "./stat-picks";
+import {
+  ShortResult,
+  SHORT_LABEL,
+  type ShortResp,
+  type ShortType,
+} from "./short-result";
+import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
+
+type Mode = "full" | ShortType;
+const MODE_WIDTH: Record<Mode, number> = {
+  full: 6,
+  last2: 2,
+  last3: 3,
+  front3: 3,
+};
+const MODES: { key: Mode; label: string }[] = [
+  { key: "full", label: "เลข 6 หลัก" },
+  { key: "last2", label: "ท้าย 2 ตัว" },
+  { key: "last3", label: "ท้าย 3 ตัว" },
+  { key: "front3", label: "หน้า 3 ตัว" },
+];
+const isMode = (v: string | null): v is Mode => !!v && v in MODE_WIDTH;
 
 interface PrizeHist {
   value: string;
@@ -29,7 +57,12 @@ interface CheckResp {
   front3: PrizeHist;
   last3: PrizeHist;
   positions: { digit: number; count: number; pct: number }[];
-  profile: { oddCount: number; digitSum: number; repeatPattern: string; sameProfileCount: number };
+  profile: {
+    oddCount: number;
+    digitSum: number;
+    repeatPattern: string;
+    sameProfileCount: number;
+  };
 }
 
 const ODDS = prizeOdds();
@@ -45,22 +78,39 @@ function partOf(number: string, key: string) {
 export function NumberChecker() {
   const router = useRouter();
   const sp = useSearchParams();
+  const initialMode: Mode = isMode(sp.get("t"))
+    ? (sp.get("t") as Mode)
+    : "full";
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [input, setInput] = useState(sp.get("n") ?? "");
   const [data, setData] = useState<CheckResp | null>(null);
+  const [short, setShort] = useState<ShortResp | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const norm = normalizeDigits(input).slice(0, 6);
+  const width = MODE_WIDTH[mode];
+  const norm = normalizeDigits(input);
 
   const check = useCallback(
-    async (n: string) => {
+    async (n: string, m: Mode) => {
       setLoading(true);
       setError(null);
-      router.replace(`/check?n=${n}`, { scroll: false });
+      router.replace(m === "full" ? `/check?n=${n}` : `/check?t=${m}&n=${n}`, {
+        scroll: false,
+      });
       try {
-        const res = await fetch(`/api/check?number=${n}`);
+        const res = await fetch(`/api/check?type=${m}&number=${n}`);
         const body = await res.json();
-        if (!res.ok) throw new Error(body?.issues?.join(", ") || body?.error || `HTTP ${res.status}`);
-        setData(body);
+        if (!res.ok)
+          throw new Error(
+            body?.issues?.join(", ") || body?.error || `HTTP ${res.status}`,
+          );
+        if (m === "full") {
+          setData(body);
+          setShort(null);
+        } else {
+          setShort(body);
+          setData(null);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "ตรวจไม่สำเร็จ");
       } finally {
@@ -70,9 +120,16 @@ export function NumberChecker() {
     [router],
   );
 
+  const pick = (n: string, m: Mode) => {
+    setMode(m);
+    setInput(n);
+    void check(n, m);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   useEffect(() => {
     const n = normalizeDigits(sp.get("n") ?? "");
-    if (n.length === 6) void check(n);
+    if (n.length === MODE_WIDTH[initialMode]) void check(n, initialMode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -80,36 +137,88 @@ export function NumberChecker() {
     <div className="space-y-6">
       <Card>
         <CardContent className="p-5">
+          <Tabs
+            value={mode}
+            onValueChange={(v) => {
+              const m = v as Mode;
+              setMode(m);
+              setError(null);
+              // ตัดเลขที่กรอกไว้ให้ตรงโหมด เช่น 6 หลัก → ท้าย 2 ตัว
+              const digits = normalizeDigits(input);
+              if (digits.length >= MODE_WIDTH[m])
+                setInput(
+                  m === "front3"
+                    ? digits.slice(0, 3)
+                    : digits.slice(-MODE_WIDTH[m]),
+                );
+            }}
+            className="mb-4"
+          >
+            <TabsList aria-label="ประเภทที่ต้องการตรวจ" className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
+              {MODES.map((m) => (
+                <TabsTrigger key={m.key} value={m.key} className="px-1 text-[13px] sm:px-3 sm:text-sm">
+                  {m.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-end"
             onSubmit={(e) => {
               e.preventDefault();
-              if (norm.length === 6) void check(norm);
+              if (norm.length === width) void check(norm, mode);
             }}
           >
             <div className="flex-1">
-              <label htmlFor="chk" className="mb-1 block text-sm text-muted">กรอกเลข 6 หลัก (เลขไทยหรือเลขอารบิกก็ได้)</label>
+              <label htmlFor="chk" className="mb-1 block text-sm text-muted">
+                {mode === "full"
+                  ? "กรอกเลข 6 หลัก"
+                  : `กรอก${SHORT_LABEL[mode]}`}{" "}
+                (เลขไทยหรือเลขอารบิกก็ได้)
+              </label>
               <Input
                 id="chk"
                 inputMode="numeric"
                 autoComplete="off"
-                placeholder="เช่น 123456"
+                placeholder={
+                  mode === "full"
+                    ? "เช่น 123456"
+                    : mode === "last2"
+                      ? "เช่น 56"
+                      : "เช่น 456"
+                }
                 className="num h-14 text-center text-3xl tracking-[0.3em]"
                 value={input}
-                maxLength={12}
+                maxLength={width * 2}
                 onChange={(e) => setInput(e.target.value)}
               />
             </div>
-            <Button type="submit" size="lg" className="h-14" disabled={norm.length !== 6 || loading}>
+            <Button
+              type="submit"
+              size="lg"
+              className="h-14"
+              disabled={norm.length !== width || loading}
+            >
               <Search aria-hidden /> ตรวจโอกาส
             </Button>
           </form>
-          {input && norm.length !== 6 && <p className="mt-2 text-sm text-muted">ต้องมีตัวเลข 6 หลัก (ตอนนี้ {norm.length} หลัก)</p>}
+          {input && norm.length !== width && (
+            <p className="mt-2 text-sm text-muted">
+              ต้องมีตัวเลข {width} หลัก (ตอนนี้ {norm.length} หลัก)
+            </p>
+          )}
         </CardContent>
       </Card>
 
       {loading && <Spinner label="กำลังตรวจ…" />}
-      {error && <ErrorState message={error} onRetry={() => norm.length === 6 && check(norm)} />}
+      {error && (
+        <ErrorState
+          message={error}
+          onRetry={() => norm.length === width && check(norm, mode)}
+        />
+      )}
+
+      {short && !loading && <ShortResult data={short} />}
 
       {data && !loading && (
         <>
@@ -122,16 +231,24 @@ export function NumberChecker() {
               </div>
               <div className="space-y-2 p-6">
                 <p className="flex items-center gap-1.5 text-sm text-muted">
-                  <Percent className="size-4 text-primary" aria-hidden /> โอกาสถูกรางวัลที่ 1 ในงวดถัดไป
+                  <Percent className="size-4 text-primary" aria-hidden />{" "}
+                  โอกาสถูกรางวัลที่ 1 ในงวดถัดไป
                 </p>
-                <p className="num text-5xl font-semibold text-primary">0.0001%</p>
+                <p className="num text-5xl font-semibold text-primary">
+                  0.0001%
+                </p>
                 <p className="text-sm text-text">หรือ 1 ใน 1,000,000</p>
                 <p className="text-sm text-muted">
-                  โอกาสถูกรางวัลใดรางวัลหนึ่ง (รวมเลขหน้า/ท้าย) ≈ <span className="num text-text">{formatProbability(ANY)}</span>
+                  โอกาสถูกรางวัลใดรางวัลหนึ่ง (รวมเลขหน้า/ท้าย) ≈{" "}
+                  <span className="num text-text">
+                    {formatProbability(ANY)}
+                  </span>
                 </p>
                 <p className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-text">
-                  ทุกหมายเลข 6 หลักได้ตัวเลขนี้<strong>เท่ากันหมด</strong> ไม่ว่าเคยออกบ่อย เคยออกน้อย หรือไม่เคยออกเลย
-                  ถ้าเว็บไหนบอกว่าเลขหนึ่งมีโอกาสออกมากกว่าเลขอื่น ตัวเลขนั้นไม่มีหลักคณิตศาสตร์รองรับ
+                  ทุกหมายเลข 6 หลักได้ตัวเลขนี้<strong>เท่ากันหมด</strong>{" "}
+                  ไม่ว่าเคยออกบ่อย เคยออกน้อย หรือไม่เคยออกเลย
+                  ถ้าเว็บไหนบอกว่าเลขหนึ่งมีโอกาสออกมากกว่าเลขอื่น
+                  ตัวเลขนั้นไม่มีหลักคณิตศาสตร์รองรับ
                 </p>
               </div>
             </div>
@@ -140,8 +257,13 @@ export function NumberChecker() {
           <div className="grid gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">โอกาสถูกรางวัลแต่ละประเภท (ต่อ 1 งวด)</CardTitle>
-                <CardDescription>คำนวณจากจำนวนรางวัลของสลากกินแบ่งรัฐบาล โดยสมมติว่าการออกรางวัลสุ่มอย่างยุติธรรม</CardDescription>
+                <CardTitle className="text-base">
+                  โอกาสถูกรางวัลแต่ละประเภท (ต่อ 1 งวด)
+                </CardTitle>
+                <CardDescription>
+                  คำนวณจากจำนวนรางวัลของสลากกินแบ่งรัฐบาล
+                  โดยสมมติว่าการออกรางวัลสุ่มอย่างยุติธรรม
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -156,14 +278,37 @@ export function NumberChecker() {
                   <TBody>
                     {ODDS.map((o) => (
                       <TR key={o.key}>
-                        <TD>{o.label}{o.draws > 1 && <span className="text-xs text-muted"> ({o.draws} รางวัล)</span>}<span className="num block text-xs text-primary sm:hidden">{partOf(data.number, o.key)}</span></TD>
-                        <TD className="num hidden text-primary sm:table-cell">{partOf(data.number, o.key)}</TD>
-                        <TD className="num whitespace-nowrap text-right">{formatProbability(o.probability)}<span className="block text-[11px] text-muted sm:hidden">1 ใน {Math.round(o.oneIn).toLocaleString("th-TH")}</span></TD>
-                        <TD className="num hidden text-right sm:table-cell">{Math.round(o.oneIn).toLocaleString("th-TH")}</TD>
+                        <TD>
+                          {o.label}
+                          {o.draws > 1 && (
+                            <span className="text-xs text-muted">
+                              {" "}
+                              ({o.draws} รางวัล)
+                            </span>
+                          )}
+                          <span className="num block text-xs text-primary sm:hidden">
+                            {partOf(data.number, o.key)}
+                          </span>
+                        </TD>
+                        <TD className="num hidden text-primary sm:table-cell">
+                          {partOf(data.number, o.key)}
+                        </TD>
+                        <TD className="num whitespace-nowrap text-right">
+                          {formatProbability(o.probability)}
+                          <span className="block text-[11px] text-muted sm:hidden">
+                            1 ใน {Math.round(o.oneIn).toLocaleString("th-TH")}
+                          </span>
+                        </TD>
+                        <TD className="num hidden text-right sm:table-cell">
+                          {Math.round(o.oneIn).toLocaleString("th-TH")}
+                        </TD>
                       </TR>
                     ))}
                   </TBody>
-                  <Caption>เลขหน้า/ท้าย 3 ตัวออก 2 ชุดต่องวด จึงมีโอกาสราว 2 ใน 1,000 · รางวัลที่ 1–5 และข้างเคียงต้องตรงครบ 6 หลัก</Caption>
+                  <Caption>
+                    เลขหน้า/ท้าย 3 ตัวออก 2 ชุดต่องวด จึงมีโอกาสราว 2 ใน 1,000 ·
+                    รางวัลที่ 1–5 และข้างเคียงต้องตรงครบ 6 หลัก
+                  </Caption>
                 </Table>
               </CardContent>
             </Card>
@@ -171,44 +316,90 @@ export function NumberChecker() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <History className="size-4 text-primary" aria-hidden /> ประวัติของเลขนี้ในอดีต
+                  <History className="size-4 text-primary" aria-hidden />{" "}
+                  ประวัติของเลขนี้ในอดีต
                 </CardTitle>
                 <CardDescription>
-                  จากข้อมูล {data.totalDraws.toLocaleString("th-TH")} งวดในฐานข้อมูล — <strong className="text-warning">เป็นสิ่งที่เกิดขึ้นแล้ว ไม่ใช่โอกาสในอนาคต</strong>
+                  จากข้อมูล {data.totalDraws.toLocaleString("th-TH")}{" "}
+                  งวดในฐานข้อมูล —{" "}
+                  <strong className="text-warning">
+                    เป็นสิ่งที่เกิดขึ้นแล้ว ไม่ใช่โอกาสในอนาคต
+                  </strong>
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
                 {data.totalDraws === 0 ? (
-                  <p className="text-muted">ยังไม่มีข้อมูลผลรางวัลในฐานข้อมูล</p>
+                  <p className="text-muted">
+                    ยังไม่มีข้อมูลผลรางวัลในฐานข้อมูล
+                  </p>
                 ) : (
                   <>
                     <ul className="space-y-2">
-                      <HistLine label="เคยเป็นรางวัลที่ 1" value={data.number} count={data.firstPrize.count} of={data.totalDraws} dates={data.firstPrize.dates} />
+                      <HistLine
+                        label="เคยเป็นรางวัลที่ 1"
+                        value={data.number}
+                        count={data.firstPrize.count}
+                        of={data.totalDraws}
+                        dates={data.firstPrize.dates}
+                      />
                       {(["last2", "front3", "last3"] as const).map((k) => {
                         const h = data[k];
-                        const label = k === "last2" ? "เลขท้าย 2 ตัว" : k === "front3" ? "เลขหน้า 3 ตัว" : "เลขท้าย 3 ตัว";
+                        const label =
+                          k === "last2"
+                            ? "เลขท้าย 2 ตัว"
+                            : k === "front3"
+                              ? "เลขหน้า 3 ตัว"
+                              : "เลขท้าย 3 ตัว";
                         return h.drawsWithData === 0 ? (
-                          <li key={k} className="text-muted">{label} {h.value}: ยังไม่มีข้อมูลรางวัลประเภทนี้</li>
+                          <li key={k} className="text-muted">
+                            {label} {h.value}: ยังไม่มีข้อมูลรางวัลประเภทนี้
+                          </li>
                         ) : (
-                          <HistLine key={k} label={`เคยออก${label}`} value={h.value} count={h.count} of={h.drawsWithData} dates={h.dates} />
+                          <HistLine
+                            key={k}
+                            label={`เคยออก${label}`}
+                            value={h.value}
+                            count={h.count}
+                            of={h.drawsWithData}
+                            dates={h.dates}
+                          />
                         );
                       })}
                     </ul>
                     <div>
-                      <p className="mb-1 text-muted">เลขแต่ละหลักเคยอยู่ในตำแหน่งนั้นของรางวัลที่ 1 บ่อยแค่ไหน (ค่ากลาง = 10%)</p>
+                      <p className="mb-1 text-muted">
+                        เลขแต่ละหลักเคยอยู่ในตำแหน่งนั้นของรางวัลที่ 1
+                        บ่อยแค่ไหน (ค่ากลาง = 10%)
+                      </p>
                       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                         {data.positions.map((p, i) => (
-                          <div key={i} className="rounded-lg border border-border bg-bg/40 p-2 text-center">
-                            <p className="text-[11px] text-muted">{POSITION_NAMES[i]}</p>
-                            <p className="num text-lg text-primary">{p.digit}</p>
+                          <div
+                            key={i}
+                            className="rounded-lg border border-border bg-bg/40 p-2 text-center"
+                          >
+                            <p className="text-[11px] text-muted">
+                              {POSITION_NAMES[i]}
+                            </p>
+                            <p className="num text-lg text-primary">
+                              {p.digit}
+                            </p>
                             <p className="num text-xs">{fmtPct(p.pct, 1)}</p>
                           </div>
                         ))}
                       </div>
                     </div>
                     <p className="text-muted">
-                      ลักษณะ: เลขคี่ {data.profile.oddCount} หลัก · ผลรวม {data.profile.digitSum} · รูปแบบเลขซ้ำ {data.profile.repeatPattern} — รางวัลที่ 1 ในอดีตที่มีจำนวนเลขคี่และรูปแบบเลขซ้ำแบบเดียวกัน{" "}
-                      {data.profile.sameProfileCount.toLocaleString("th-TH")} งวด ({fmtPct((data.profile.sameProfileCount / data.totalDraws) * 100, 1)})
+                      ลักษณะ: เลขคี่ {data.profile.oddCount} หลัก · ผลรวม{" "}
+                      {data.profile.digitSum} · รูปแบบเลขซ้ำ{" "}
+                      {data.profile.repeatPattern} — รางวัลที่ 1
+                      ในอดีตที่มีจำนวนเลขคี่และรูปแบบเลขซ้ำแบบเดียวกัน{" "}
+                      {data.profile.sameProfileCount.toLocaleString("th-TH")}{" "}
+                      งวด (
+                      {fmtPct(
+                        (data.profile.sameProfileCount / data.totalDraws) * 100,
+                        1,
+                      )}
+                      )
                     </p>
                   </>
                 )}
@@ -218,9 +409,14 @@ export function NumberChecker() {
 
           <Card>
             <CardContent className="flex gap-3 p-5 text-sm text-muted">
-              <ShieldAlert className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+              <ShieldAlert
+                className="mt-0.5 size-5 shrink-0 text-primary"
+                aria-hidden
+              />
               <p>
-                ทำไมประวัติไม่เปลี่ยนโอกาส: แต่ละงวดสุ่มใหม่ทั้งหมด ลูกบอลไม่ได้ “จำ” ว่าเคยออกอะไร เลขที่ไม่เคยออกจึงไม่ได้ “ถึงคิว” และเลขที่เคยออกก็ไม่ได้ “ติดมือ”
+                ทำไมประวัติไม่เปลี่ยนโอกาส: แต่ละงวดสุ่มใหม่ทั้งหมด ลูกบอลไม่ได้
+                “จำ” ว่าเคยออกอะไร เลขที่ไม่เคยออกจึงไม่ได้ “ถึงคิว”
+                และเลขที่เคยออกก็ไม่ได้ “ติดมือ”
                 ความแตกต่างของสัดส่วนในประวัติด้านบนเกิดจากความบังเอิญของข้อมูลจำนวนไม่กี่ร้อยงวดตามปกติ
               </p>
             </CardContent>
@@ -228,13 +424,7 @@ export function NumberChecker() {
         </>
       )}
 
-      <StatPicks
-        onPick={(n) => {
-          setInput(n);
-          void check(n);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }}
-      />
+      <StatPicks onPick={pick} />
     </div>
   );
 }
@@ -242,19 +432,51 @@ export function NumberChecker() {
 /** แถบสรุป: เลขนี้ออกมาแล้วกี่ครั้งในแต่ละประเภทรางวัล */
 function TimesBar({ data }: { data: CheckResp }) {
   const items = [
-    { label: "รางวัลที่ 1", value: data.number, count: data.firstPrize.count, of: data.totalDraws, last: data.firstPrize.dates[0] },
-    { label: "เลขหน้า 3 ตัว", value: data.front3.value, count: data.front3.count, of: data.front3.drawsWithData, last: data.front3.dates[0] },
-    { label: "เลขท้าย 3 ตัว", value: data.last3.value, count: data.last3.count, of: data.last3.drawsWithData, last: data.last3.dates[0] },
-    { label: "เลขท้าย 2 ตัว", value: data.last2.value, count: data.last2.count, of: data.last2.drawsWithData, last: data.last2.dates[0] },
+    {
+      label: "รางวัลที่ 1",
+      value: data.number,
+      count: data.firstPrize.count,
+      of: data.totalDraws,
+      last: data.firstPrize.dates[0],
+    },
+    {
+      label: "เลขหน้า 3 ตัว",
+      value: data.front3.value,
+      count: data.front3.count,
+      of: data.front3.drawsWithData,
+      last: data.front3.dates[0],
+    },
+    {
+      label: "เลขท้าย 3 ตัว",
+      value: data.last3.value,
+      count: data.last3.count,
+      of: data.last3.drawsWithData,
+      last: data.last3.dates[0],
+    },
+    {
+      label: "เลขท้าย 2 ตัว",
+      value: data.last2.value,
+      count: data.last2.count,
+      of: data.last2.drawsWithData,
+      last: data.last2.dates[0],
+    },
   ];
   return (
-    <section aria-label="จำนวนครั้งที่เคยออก" className="rounded-2xl border border-primary/30 bg-surface p-4">
+    <section
+      aria-label="จำนวนครั้งที่เคยออก"
+      className="rounded-2xl border border-primary/30 bg-surface p-4"
+    >
       <p className="mb-3 flex items-center gap-1.5 text-sm text-muted">
-        <History className="size-4 text-primary" aria-hidden /> เลข <span className="num text-primary">{data.number}</span> ออกมาแล้วกี่ครั้ง
+        <History className="size-4 text-primary" aria-hidden /> เลข{" "}
+        <span className="num text-primary">{data.number}</span>{" "}
+        ออกมาแล้วกี่ครั้ง
       </p>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {items.map((it) => (
-          <div key={it.label} className="min-w-0 rounded-xl border border-border bg-bg/40 p-3">
+          <div
+            key={it.label}
+            className="min-w-0 rounded-xl border border-border bg-bg/40 p-3"
+          >
             <p className="text-xs text-muted">
               {it.label} <span className="num text-primary">{it.value}</span>
             </p>
@@ -262,11 +484,15 @@ function TimesBar({ data }: { data: CheckResp }) {
               <p className="mt-1 text-sm text-muted">ยังไม่มีข้อมูล</p>
             ) : (
               <>
-                <p className={`num mt-1 text-3xl font-semibold ${it.count > 0 ? "text-success" : "text-text"}`}>
-                  {it.count.toLocaleString("th-TH")} <span className="text-sm font-normal text-muted">ครั้ง</span>
+                <p
+                  className={`num mt-1 text-3xl font-semibold ${it.count > 0 ? "text-success" : "text-text"}`}
+                >
+                  {it.count.toLocaleString("th-TH")}{" "}
+                  <span className="text-sm font-normal text-muted">ครั้ง</span>
                 </p>
                 <p className="truncate text-[11px] text-muted">
-                  จาก {it.of.toLocaleString("th-TH")} งวด{it.last ? ` · ล่าสุด ${formatThaiDate(it.last, true)}` : ""}
+                  จาก {it.of.toLocaleString("th-TH")} งวด
+                  {it.last ? ` · ล่าสุด ${formatThaiDate(it.last, true)}` : ""}
                 </p>
               </>
             )}
@@ -277,14 +503,36 @@ function TimesBar({ data }: { data: CheckResp }) {
   );
 }
 
-function HistLine({ label, value, count, of, dates }: { label: string; value: string; count: number; of: number; dates: string[] }) {
+function HistLine({
+  label,
+  value,
+  count,
+  of,
+  dates,
+}: {
+  label: string;
+  value: string;
+  count: number;
+  of: number;
+  dates: string[];
+}) {
   return (
     <li>
       <span className="text-text">{label} </span>
       <span className="num text-primary">{value}</span>
       {": "}
-      <strong className="text-text">{count}</strong> ครั้ง จาก {of.toLocaleString("th-TH")} งวด
-      {count > 0 && <span className="text-xs text-muted"> · ล่าสุด {dates.slice(0, 3).map((d) => formatThaiDate(d, true)).join(", ")}</span>}
+      <strong className="text-text">{count}</strong> ครั้ง จาก{" "}
+      {of.toLocaleString("th-TH")} งวด
+      {count > 0 && (
+        <span className="text-xs text-muted">
+          {" "}
+          · ล่าสุด{" "}
+          {dates
+            .slice(0, 3)
+            .map((d) => formatThaiDate(d, true))
+            .join(", ")}
+        </span>
+      )}
     </li>
   );
 }
